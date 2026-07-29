@@ -320,15 +320,15 @@ def run_action(payload: dict[str, Any]) -> dict[str, Any]:
         res = observe.frontmost_app()
     elif action == "desktop.focus":
         app = str(payload.get("app") or "").strip()
-        if not _app_allowed(app):
+        if app in APP_DENYLIST:
+            res = {"ok": False, "code": "APP_DENIED", "detail": f"{app!r} denylisted"}
+        elif not _app_allowed(app):
             res = {
                 "ok": False,
                 "code": "APP_NOT_ALLOWLISTED",
                 "detail": f"cannot focus {app!r}",
                 "data": {"allowlist": sorted(APP_ALLOWLIST)},
             }
-        elif app in APP_DENYLIST:
-            res = {"ok": False, "code": "APP_DENIED", "detail": f"{app!r} denylisted"}
         else:
             res = observe.focus_app(app)
     elif action == "desktop.click":
