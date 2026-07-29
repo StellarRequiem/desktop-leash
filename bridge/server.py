@@ -40,8 +40,8 @@ REQUIRE_D4_SESSION = os.environ.get("DESKTOP_LEASH_REQUIRE_D4_SESSION", "1") not
     "false",
     "no",
 )
-VERSION = "0.6.1"
-PHASE = 6
+VERSION = "0.7.0"
+PHASE = 7
 # Profile: strict | cua (default cua = wider productive apps)
 PROFILE = os.environ.get("DESKTOP_LEASH_PROFILE", "cua").strip().lower() or "cua"
 
@@ -132,6 +132,9 @@ ALLOWED_ACTIONS = frozenset(
         "desktop.ax_click",  # Phase 6 CUA
         "desktop.region_screenshot",
         "desktop.cua_observe",
+        "desktop.layout",
+        "desktop.click_window",
+        "desktop.screenshot_window",
     }
 )
 
@@ -144,6 +147,9 @@ ACTION_TIERS = {
     "desktop.ax": 1,
     "desktop.region_screenshot": 1,
     "desktop.cua_observe": 1,
+    "desktop.layout": 1,
+    "desktop.screenshot_window": 1,
+    "desktop.click_window": 3,
     "desktop.focus": 2,
     "desktop.ax_click": 3,
     "desktop.click": 3,
@@ -169,6 +175,7 @@ _pending: dict[str, dict[str, Any]] = {}
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import observe  # noqa: E402
 import observe_cua  # noqa: E402
+import layout  # noqa: E402
 
 
 def _now() -> float:
@@ -401,7 +408,7 @@ def status_payload() -> dict[str, Any]:
         "service": "desktop-leash",
         "version": VERSION,
         "phase": PHASE,
-        "phase_name": "cua-depth",
+        "phase_name": "layout-control",
         "profile": PROFILE,
         "armed": _arm_active(),
         "arm_until": arm.get("until"),
@@ -421,7 +428,7 @@ def status_payload() -> dict[str, Any]:
         "velocity": {"max": VEL_MAX, "window_sec": VEL_WINDOW},
         "permission_doc": "docs/PERMISSION_TIERS.md",
         "plan": str(Path.home() / "ops/DESKTOP_LEASH_PLAN.md"),
-        "note": "Phase 6 CUA: ax_click + region shot + cua_observe; D4 needs session + confirm.",
+        "note": "Phase 7 layout: desktop.layout + click_window (window-local coords). Never guess full-screen clicks.",
         "integration_doc": "docs/INTEGRATION.md",
         "anti_patterns_doc": "docs/ANTI_PATTERNS.md",
     }
@@ -468,6 +475,76 @@ def _execute(action: str, payload: dict[str, Any], job_id: str) -> dict[str, Any
                 description=str(payload.get("description") or ""),
                 index=int(payload.get("index") or 1),
             )
+    elif action == "desktop.layout":
+        out = payload.get("path") or ""
+        if out:
+            res = layout.layout_snapshot(Path(out))
+        else:
+            res = layout.layout_snapshot(None)
+    elif action == "desktop.screenshot_window":
+        CAPTURES.mkdir(parents=True, exist_ok=True)
+        out = payload.get("path") or str(
+            CAPTURES / f"win-{time.strftime('%Y%m%d-%H%M%S')}-{job_id[:8]}.png"
+        )
+        res = layout.screenshot_window(
+            str(payload.get("app") or ""),
+            Path(out),
+            title_contains=str(payload.get("title") or ""),
+        )
+    elif action == "desktop.click_window":
+        # Focus target first (do not gate on previous frontmost — that was the split-desktop bug)
+        app = str(payload.get("app") or "").strip()
+        if not app:
+            res = {"ok": False, "code": "APP_REQUIRED", "detail": "app required for click_window"}
+        elif app in APP_DENYLIST:
+            res = {"ok": False, "code": "APP_DENIED", "detail": f"{app!r} denylisted"}
+        elif not _app_allowed(app):
+            res = {
+                "ok": False,
+                "code": "APP_NOT_ALLOWLISTED",
+                "detail": f"cannot click in {app!r}",
+                "data": {"allowlist": sorted(APP_ALLOWLIST)},
+            }
+        else:
+            if payload.get("focus", True):
+                fr = observe.focus_app(app)
+                if not fr.get("ok"):
+                    res = fr
+                else:
+                    time.sleep(0.15)
+                    resolved = layout.resolve_click_point(
+                        app=app,
+                        rel_x=payload.get("rel_x"),
+                        rel_y=payload.get("rel_y"),
+                        local_x=payload.get("local_x"),
+                        local_y=payload.get("local_y"),
+                        title_contains=str(payload.get("title") or ""),
+                    )
+                    if not resolved.get("ok"):
+                        res = resolved
+                    else:
+                        d = resolved["data"]
+                        click = observe.click_xy(int(d["global_x"]), int(d["global_y"]))
+                        if click.get("ok"):
+                            click["data"] = {**(click.get("data") or {}), "resolved": d}
+                        res = click
+            else:
+                resolved = layout.resolve_click_point(
+                    app=app,
+                    rel_x=payload.get("rel_x"),
+                    rel_y=payload.get("rel_y"),
+                    local_x=payload.get("local_x"),
+                    local_y=payload.get("local_y"),
+                    title_contains=str(payload.get("title") or ""),
+                )
+                if not resolved.get("ok"):
+                    res = resolved
+                else:
+                    d = resolved["data"]
+                    click = observe.click_xy(int(d["global_x"]), int(d["global_y"]))
+                    if click.get("ok"):
+                        click["data"] = {**(click.get("data") or {}), "resolved": d}
+                    res = click
     elif action == "desktop.cua_observe":
         res = observe_cua.cua_observe_bundle(
             Path(payload["out_dir"]) if payload.get("out_dir") else None

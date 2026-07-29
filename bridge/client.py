@@ -82,6 +82,20 @@ def main(argv: list[str] | None = None) -> int:
     rs.add_argument("--h", type=int, required=True)
     rs.add_argument("--out", default="")
     sub.add_parser("cua-observe", help="Phase 6 CUA observe bundle")
+    ly = sub.add_parser("layout", help="Phase 7: window frames + display geometry")
+    ly.add_argument("--shot", default="", help="optional full screenshot path")
+    sw = sub.add_parser("shot-window", help="Phase 7: screenshot one app window")
+    sw.add_argument("--app", required=True)
+    sw.add_argument("--title", default="")
+    sw.add_argument("--out", default="")
+    cw = sub.add_parser("click-window", help="Phase 7: click inside app window (rel 0..1 or local px)")
+    cw.add_argument("--app", required=True)
+    cw.add_argument("--title", default="")
+    cw.add_argument("--rel-x", type=float, default=None)
+    cw.add_argument("--rel-y", type=float, default=None)
+    cw.add_argument("--local-x", type=int, default=None)
+    cw.add_argument("--local-y", type=int, default=None)
+    cw.add_argument("--no-focus", action="store_true")
 
     args = p.parse_args(argv)
     base = args.base
@@ -175,6 +189,32 @@ def main(argv: list[str] | None = None) -> int:
         return out(call(base, "/v1/action", body))
     if args.cmd == "cua-observe":
         return out(call(base, "/v1/action", {"action": "desktop.cua_observe"}))
+    if args.cmd == "layout":
+        body: dict = {"action": "desktop.layout"}
+        if args.shot:
+            body["path"] = args.shot
+        return out(call(base, "/v1/action", body))
+    if args.cmd == "shot-window":
+        body = {"action": "desktop.screenshot_window", "app": args.app, "title": args.title}
+        if args.out:
+            body["path"] = args.out
+        return out(call(base, "/v1/action", body))
+    if args.cmd == "click-window":
+        body = {
+            "action": "desktop.click_window",
+            "app": args.app,
+            "title": args.title,
+            "focus": not args.no_focus,
+        }
+        if args.rel_x is not None:
+            body["rel_x"] = args.rel_x
+        if args.rel_y is not None:
+            body["rel_y"] = args.rel_y
+        if args.local_x is not None:
+            body["local_x"] = args.local_x
+        if args.local_y is not None:
+            body["local_y"] = args.local_y
+        return out(call(base, "/v1/action", body))
     return 2
 
 
