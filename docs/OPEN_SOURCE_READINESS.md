@@ -1,6 +1,6 @@
 # desktop-leash — public open-source readiness
 
-**Decision status:** **DEFERRED** (local Phase 5 control plane).  
+**Decision status:** **SHIPPED** (operator authorized 2026-07-29) (local Phase 5 control plane).  
 Prep only — no remote push without operator ask.
 
 ## What would become public
@@ -13,7 +13,7 @@ Prep only — no remote push without operator ask.
 
 ## Before any public repo
 
-- [ ] Operator explicit “open-source desktop-leash” ask  
+- [x] Operator explicit “open-source desktop-leash” ask  
 - [ ] LICENSE  
 - [ ] CLAIMS.md aligned with Phase 5 (AX redacted, D4 dual-control)  
 - [ ] THREAT_MODEL (Accessibility + Screen Recording = high trust)  

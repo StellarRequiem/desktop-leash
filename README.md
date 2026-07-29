@@ -77,3 +77,8 @@ Grant to the app that runs the bridge (Terminal, Ghostty, or `python` as shown b
 ## Version
 
 **0.5.0** — Phase 5 AX + D4 dual-control session.
+
+
+## License
+
+Apache-2.0 · See CLAIMS.md · THREAT_MODEL.md
