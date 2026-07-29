@@ -1,0 +1,60 @@
+# desktop-leash
+
+**Phase 1 — observe-only** full-computer-use control plane for macOS.
+
+Sibling to [browser-leash](../browser-leash) (Chrome only). Same philosophy: **authority is not ambient**.
+
+```
+  Grok / CLI  ──HTTP 127.0.0.1:8757──►  desktop-leash bridge
+                                              │
+                                              ├── screencapture (Screen Recording)
+                                              ├── osascript apps/windows (Accessibility)
+                                              └── receipts/*.jsonl
+```
+
+Plan: `~/ops/DESKTOP_LEASH_PLAN.md`
+
+## Phase 1 scope
+
+| Can | Cannot |
+|-----|--------|
+| status (no arm) | click / type / key |
+| arm / disarm (sticky toggle) | focus apps |
+| list apps / windows / displays | arbitrary OS control |
+| screenshot to `captures/` | remote access |
+
+## Quick start
+
+```bash
+# Terminal 1
+python3 ~/desktop-leash/bridge/server.py
+
+# Terminal 2
+python3 ~/desktop-leash/bridge/client.py status
+python3 ~/desktop-leash/bridge/client.py arm      # sticky ON
+python3 ~/desktop-leash/bridge/client.py apps
+python3 ~/desktop-leash/bridge/client.py windows
+python3 ~/desktop-leash/bridge/client.py screenshot --out /tmp/desk.png
+python3 ~/desktop-leash/bridge/client.py disarm   # when done
+```
+
+## Permissions (operator, once)
+
+See **`docs/LOAD.md`**.
+
+1. **Screen Recording** — required for `screenshot`  
+2. **Accessibility** — required for full `apps` / `windows` lists  
+
+Grant to the app that runs the bridge (Terminal, Ghostty, or `python` as shown by the OS).
+
+## Safety
+
+- Loopback only (`127.0.0.1`)
+- Deny-by-default actions
+- Sticky ARM until DISARM
+- Receipts under `receipts/` (gitignored)
+- Screenshots under `captures/` (gitignored; may contain PII — local only)
+
+## Version
+
+**0.1.0** — Phase 1 observe-only.
