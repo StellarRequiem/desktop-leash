@@ -1,6 +1,6 @@
 # desktop-leash
 
-**Phase 3 — confirm gates + allowlisted input** full-computer-use control plane for macOS.
+**Phase 4 — Grok integration + confirm gates** full-computer-use control plane for macOS.
 
 Sibling to [browser-leash](../browser-leash) (Chrome only). Same philosophy: **authority is not ambient**.
 
@@ -56,6 +56,13 @@ See **`docs/LOAD.md`**.
 
 Grant to the app that runs the bridge (Terminal, Ghostty, or `python` as shown by the OS).
 
+## Docs
+
+- `docs/INTEGRATION.md` — which plane when
+- `docs/ANTI_PATTERNS.md` — never-do list
+- `docs/LOAD.md` — macOS permissions
+- `docs/POSTABLE_EXPLAINER.md` — claim-safe public copy
+
 ## Safety
 
 - Loopback only (`127.0.0.1`)
@@ -66,4 +73,4 @@ Grant to the app that runs the bridge (Terminal, Ghostty, or `python` as shown b
 
 ## Version
 
-**0.3.0** — Phase 3 D4 confirm gates.
+**0.4.0** — Phase 4 Grok integration docs + skill.

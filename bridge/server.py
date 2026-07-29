@@ -33,8 +33,8 @@ REQUIRE_D4_CONFIRM = os.environ.get("DESKTOP_LEASH_REQUIRE_CONFIRM", "1") not in
     "no",
 )
 CONFIRM_TTL_SEC = int(os.environ.get("DESKTOP_LEASH_CONFIRM_TTL", "120"))
-VERSION = "0.3.0"
-PHASE = 3
+VERSION = "0.4.0"
+PHASE = 4
 
 DEFAULT_APP_ALLOWLIST = frozenset(
     {
@@ -323,7 +323,7 @@ def status_payload() -> dict[str, Any]:
         "service": "desktop-leash",
         "version": VERSION,
         "phase": PHASE,
-        "phase_name": "confirm-gates",
+        "phase_name": "grok-integration",
         "armed": _arm_active(),
         "arm_until": arm.get("until"),
         "arm_mode": "toggle" if ARM_TTL_SEC <= 0 else f"timed_{ARM_TTL_SEC}s",
@@ -336,7 +336,9 @@ def status_payload() -> dict[str, Any]:
         "velocity": {"max": VEL_MAX, "window_sec": VEL_WINDOW},
         "permission_doc": "docs/PERMISSION_TIERS.md",
         "plan": str(Path.home() / "ops/DESKTOP_LEASH_PLAN.md"),
-        "note": "Phase 3: D4 (quit, Return/Enter, risky type) needs client confirm --yes",
+        "note": "Phase 4: D1–D4 live; D4 needs confirm --yes. See docs/INTEGRATION.md + ANTI_PATTERNS.md",
+        "integration_doc": "docs/INTEGRATION.md",
+        "anti_patterns_doc": "docs/ANTI_PATTERNS.md",
     }
 
 
