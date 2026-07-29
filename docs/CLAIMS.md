@@ -108,15 +108,20 @@ python3 ~/desktop-leash/bridge/client.py confirm --id <id> --no
 
 ---
 
-## Upgrade path (work queue — only if operator prioritizes)
+## Upgrade path — architecture in progress
 
-| Gap | Work that upgrades the claim | Still cannot claim after |
-|-----|------------------------------|---------------------------|
-| Grok shell not gated | Wire cannot-bypass host for chosen tools; re-run `grok_host_wire.py` | “all tools” forever unless every tool routes |
-| browser-leash not public | Decide open-source vs private; docs + threat model + claim file | OS-wide CUA |
-| desktop-leash not public | Same + LOAD permissions story + smoke script in CI-like form | human-equivalent CUA |
-| Post auto-enable | browser-leash fill/Post work; still human confirm | auto-post without human |
-| Formal red team | Scoped engagement + report | marketing “unbreakable” |
+**Shipped host:** `~/agent-control` — AssuredPlaneHost wires browser.* + desktop.* through mcp-assure AdaptiveGate.  
+Proof: `python3 ~/agent-control/cli.py smoke` → `cannot_bypass_planes=PASS`  
+Map: `~/agent-control/docs/CLAIMS_PATH.md`
+
+| Gap | Work that upgrades the claim | Status | Still cannot claim after |
+|-----|------------------------------|--------|---------------------------|
+| Plane tools gated | AssuredPlaneHost + pack + dual human gates | **Built** (local) | “every Grok shell tool” |
+| Grok shell not gated | Wire Build session / high-blast shell pack | next | “all tools” unless every path routes |
+| browser-leash not public | Decide open-source vs private | open | OS-wide CUA |
+| desktop-leash not public | Same + LOAD + smoke | open | human-equivalent CUA |
+| Post auto-enable | fill quality; pipeline state machine exists | pipeline **built**; fill ongoing | auto-post without human |
+| Formal red team | Scoped engagement + report | open | marketing “unbreakable” |
 
 ---
 

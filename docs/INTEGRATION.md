@@ -5,10 +5,15 @@ For Grok Build and operators. **Wrong plane = wrong risk.**
 ```
 Grok Build
   ├── shell / files / git / tests     → always prefer for code
-  ├── browser-leash :8756             → Chrome session (X, GitHub web, site)
-  ├── desktop-leash :8757             → other GUI apps + screen observe
-  └── mcp-assure                      → policy on MCP tool calls (when wired)
+  ├── agent-control (preferred for plane tools)
+  │     └── mcp-assure AdaptiveGate → browser.* / desktop.* / plane.*
+  ├── browser-leash :8756             → Chrome session (direct debug OK)
+  ├── desktop-leash :8757             → other GUI (direct debug OK)
+  └── mcp-assure                      → package / packs / purple
 ```
+
+Preferred agent path for browser/desktop: **`python3 ~/agent-control/cli.py call …`**  
+(see `~/agent-control/ARCHITECTURE.md`).
 
 ## Decision table
 
