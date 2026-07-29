@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""desktop-leash bridge — Phase 5: AX snapshot + D4 dual-control session.
+"""desktop-leash bridge — Phase 6 CUA depth: AX click, region shot, observe bundle.
 
 Loopback only. Sticky arm. App allowlist. D4 requires human confirm + D4 session.
 """
@@ -40,8 +40,8 @@ REQUIRE_D4_SESSION = os.environ.get("DESKTOP_LEASH_REQUIRE_D4_SESSION", "1") not
     "false",
     "no",
 )
-VERSION = "0.5.0"
-PHASE = 5
+VERSION = "0.6.0"
+PHASE = 6
 
 DEFAULT_APP_ALLOWLIST = frozenset(
     {
@@ -107,6 +107,9 @@ ALLOWED_ACTIONS = frozenset(
         "desktop.scroll",
         "desktop.quit",  # D4
         "desktop.ax",  # Phase 5 observe
+        "desktop.ax_click",  # Phase 6 CUA
+        "desktop.region_screenshot",
+        "desktop.cua_observe",
     }
 )
 
@@ -117,7 +120,10 @@ ACTION_TIERS = {
     "desktop.screenshot": 1,
     "desktop.frontmost": 1,
     "desktop.ax": 1,
+    "desktop.region_screenshot": 1,
+    "desktop.cua_observe": 1,
     "desktop.focus": 2,
+    "desktop.ax_click": 3,
     "desktop.click": 3,
     "desktop.type": 3,
     "desktop.press": 3,  # may escalate to 4 for return/enter
@@ -140,6 +146,7 @@ _pending: dict[str, dict[str, Any]] = {}
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import observe  # noqa: E402
+import observe_cua  # noqa: E402
 
 
 def _now() -> float:
@@ -372,7 +379,7 @@ def status_payload() -> dict[str, Any]:
         "service": "desktop-leash",
         "version": VERSION,
         "phase": PHASE,
-        "phase_name": "ax-and-d4-dual-control",
+        "phase_name": "cua-depth",
         "armed": _arm_active(),
         "arm_until": arm.get("until"),
         "arm_mode": "toggle" if ARM_TTL_SEC <= 0 else f"timed_{ARM_TTL_SEC}s",
@@ -391,7 +398,7 @@ def status_payload() -> dict[str, Any]:
         "velocity": {"max": VEL_MAX, "window_sec": VEL_WINDOW},
         "permission_doc": "docs/PERMISSION_TIERS.md",
         "plan": str(Path.home() / "ops/DESKTOP_LEASH_PLAN.md"),
-        "note": "Phase 5: AX snapshot + D4 dual-control session. D4 needs session open + confirm --yes.",
+        "note": "Phase 6 CUA: ax_click + region shot + cua_observe; D4 needs session + confirm.",
         "integration_doc": "docs/INTEGRATION.md",
         "anti_patterns_doc": "docs/ANTI_PATTERNS.md",
     }
@@ -415,6 +422,33 @@ def _execute(action: str, payload: dict[str, Any], job_id: str) -> dict[str, Any
         res = observe.frontmost_app()
     elif action == "desktop.ax":
         res = observe.ax_snapshot(max_elements=int(payload.get("max") or 40))
+    elif action == "desktop.region_screenshot":
+        CAPTURES.mkdir(parents=True, exist_ok=True)
+        out = payload.get("path") or str(
+            CAPTURES / f"region-{time.strftime('%Y%m%d-%H%M%S')}-{job_id[:8]}.png"
+        )
+        res = observe_cua.region_screenshot(
+            Path(out),
+            int(payload.get("x") or 0),
+            int(payload.get("y") or 0),
+            int(payload.get("w") or 200),
+            int(payload.get("h") or 200),
+        )
+    elif action == "desktop.ax_click":
+        gate = _require_frontmost_allowed()
+        if gate:
+            res = gate
+        else:
+            res = observe_cua.ax_click(
+                role=str(payload.get("role") or ""),
+                title=str(payload.get("title") or ""),
+                description=str(payload.get("description") or ""),
+                index=int(payload.get("index") or 1),
+            )
+    elif action == "desktop.cua_observe":
+        res = observe_cua.cua_observe_bundle(
+            Path(payload["out_dir"]) if payload.get("out_dir") else None
+        )
     elif action == "desktop.focus":
         app = str(payload.get("app") or "").strip()
         if app in APP_DENYLIST:

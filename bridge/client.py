@@ -70,6 +70,18 @@ def main(argv: list[str] | None = None) -> int:
     d4s.add_argument("--open", action="store_true")
     d4s.add_argument("--close", action="store_true")
     d4s.add_argument("--ttl", type=int, default=300)
+    axc = sub.add_parser("ax-click", help="Phase 6 CUA: click AX match")
+    axc.add_argument("--role", default="")
+    axc.add_argument("--title", default="")
+    axc.add_argument("--description", default="")
+    axc.add_argument("--index", type=int, default=1)
+    rs = sub.add_parser("region", help="Phase 6 region screenshot")
+    rs.add_argument("--x", type=int, required=True)
+    rs.add_argument("--y", type=int, required=True)
+    rs.add_argument("--w", type=int, required=True)
+    rs.add_argument("--h", type=int, required=True)
+    rs.add_argument("--out", default="")
+    sub.add_parser("cua-observe", help="Phase 6 CUA observe bundle")
 
     args = p.parse_args(argv)
     base = args.base
@@ -136,6 +148,33 @@ def main(argv: list[str] | None = None) -> int:
         st = call(base, "/v1/status")
         print(json.dumps({"ok": True, "d4_session": st.get("d4_session"), "require_d4_session": st.get("require_d4_session")}, indent=2))
         return 0
+    if args.cmd == "ax-click":
+        return out(
+            call(
+                base,
+                "/v1/action",
+                {
+                    "action": "desktop.ax_click",
+                    "role": args.role,
+                    "title": args.title,
+                    "description": args.description,
+                    "index": args.index,
+                },
+            )
+        )
+    if args.cmd == "region":
+        body = {
+            "action": "desktop.region_screenshot",
+            "x": args.x,
+            "y": args.y,
+            "w": args.w,
+            "h": args.h,
+        }
+        if args.out:
+            body["path"] = args.out
+        return out(call(base, "/v1/action", body))
+    if args.cmd == "cua-observe":
+        return out(call(base, "/v1/action", {"action": "desktop.cua_observe"}))
     return 2
 
 
