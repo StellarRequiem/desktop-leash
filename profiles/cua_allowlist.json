@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "id": "cua_allowlist",
+    "description": "Extra apps when DESKTOP_LEASH_PROFILE=cua (default). Merged with built-in allowlist; denylist always wins.",
+    "version": 1
+  },
+  "extra_allowlist": [
+    "Visual Studio Code",
+    "Slack",
+    "Discord",
+    "Notion",
+    "Obsidian",
+    "Calendar",
+    "Reminders",
+    "Preview",
+    "QuickTime Player",
+    "zoom.us",
+    "Zoom",
+    "Microsoft Teams",
+    "Spotify",
+    "Arc",
+    "Brave Browser",
+    "Activity Monitor",
+    "Console",
+    "Dictionary",
+    "Calculator",
+    "Books",
+    "Photos",
+    "Music"
+  ]
+}

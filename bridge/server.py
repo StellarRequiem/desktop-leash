@@ -40,8 +40,10 @@ REQUIRE_D4_SESSION = os.environ.get("DESKTOP_LEASH_REQUIRE_D4_SESSION", "1") not
     "false",
     "no",
 )
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 PHASE = 6
+# Profile: strict | cua (default cua = wider productive apps)
+PROFILE = os.environ.get("DESKTOP_LEASH_PROFILE", "cua").strip().lower() or "cua"
 
 DEFAULT_APP_ALLOWLIST = frozenset(
     {
@@ -65,9 +67,25 @@ DEFAULT_APP_ALLOWLIST = frozenset(
 )
 
 
+def _load_profile_extras() -> frozenset[str]:
+    """Load CUA extra allowlist from profiles/cua_allowlist.json when profile=cua."""
+    if PROFILE not in ("cua", "wide", "full"):
+        return frozenset()
+    path = ROOT / "profiles" / "cua_allowlist.json"
+    if not path.is_file():
+        return frozenset()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        names = data.get("extra_allowlist") or []
+        return frozenset(str(n).strip() for n in names if str(n).strip())
+    except Exception:
+        return frozenset()
+
+
 def _load_allowlist() -> frozenset[str]:
     extra = os.environ.get("DESKTOP_LEASH_ALLOW_APPS", "")
     names = set(DEFAULT_APP_ALLOWLIST)
+    names |= set(_load_profile_extras())
     for part in extra.split(","):
         p = part.strip()
         if p:
@@ -87,6 +105,10 @@ APP_DENYLIST = frozenset(
         "Messages",
         "Mail",
         "Passwords",
+        "Coinbase",
+        "Ledger Live",
+        "Authy",
+        "Microsoft Authenticator",
     }
 )
 
@@ -380,6 +402,7 @@ def status_payload() -> dict[str, Any]:
         "version": VERSION,
         "phase": PHASE,
         "phase_name": "cua-depth",
+        "profile": PROFILE,
         "armed": _arm_active(),
         "arm_until": arm.get("until"),
         "arm_mode": "toggle" if ARM_TTL_SEC <= 0 else f"timed_{ARM_TTL_SEC}s",

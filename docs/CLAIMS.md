@@ -35,7 +35,7 @@ Public language must stay **≤ evidence**. Pair with:
 
 | Field | Value |
 |-------|--------|
-| **State** | **Verified locally** (Phase 5) · **not Published** as product |
+| **State** | **Verified locally** (Phase 6 CUA depth) · **not Published** as product |
 | **Evidence** | Bridge `:8757` · **v0.4.0** · phase=4 · sticky arm · D4 `require_d4_confirm` · hold-tests 2026-07-29: `NOT_ARMED`, `APP_DENIED` (1Password), `CONFIRM_REQUIRED` → `CONFIRM_REJECTED` on Return · skill + INTEGRATION/ANTI_PATTERNS |
 | **Caveats** | Allowlisted apps only. Password managers denylisted. Quit/Return need human confirm. Not full human-equivalent CUA. Screenshots may hold PII (local only). |
 | **Public wording** | “Local macOS desktop control plane: arm-gated observe and allowlisted input, with human confirm on high-blast actions — not unattended OS takeover.” |
