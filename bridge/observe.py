@@ -346,3 +346,99 @@ def quit_app(app_name: str) -> dict[str, Any]:
         }
     return {"ok": True, "code": "QUIT", "data": {"app": name}}
 
+
+def ax_snapshot(max_elements: int = 40) -> dict[str, Any]:
+    """Shallow Accessibility UI tree for frontmost app (redacted).
+
+    Phase 5 observe. Titles truncated; secure fields redacted.
+    Requires Accessibility permission.
+    """
+    max_elements = max(1, min(int(max_elements or 40), 60))
+    script = f"""
+set maxN to {max_elements}
+tell application "System Events"
+  set frontProc to first application process whose frontmost is true
+  set appName to name of frontProc
+  try
+    set win to first window of frontProc
+    set winTitle to name of win
+  on error
+    set winTitle to ""
+    return appName & linefeed & winTitle
+  end try
+  set linesOut to {{}}
+  try
+    set uiList to UI elements of win
+    set n to 0
+    repeat with u in uiList
+      set n to n + 1
+      if n > maxN then exit repeat
+      try
+        set r to role of u as string
+      on error
+        set r to "?"
+      end try
+      try
+        set t to name of u as string
+      on error
+        set t to ""
+      end try
+      try
+        set d to description of u as string
+      on error
+        set d to ""
+      end try
+      set v to ""
+      if r is "secure text field" then
+        set v to "[redacted-secure]"
+      else
+        try
+          set v to value of u as string
+        end try
+      end if
+      if (length of t) > 50 then set t to text 1 thru 50 of t
+      if (length of d) > 50 then set d to text 1 thru 50 of d
+      if (length of v) > 40 then set v to text 1 thru 40 of v
+      set end of linesOut to r & tab & t & tab & d & tab & v
+    end repeat
+  end try
+end tell
+set AppleScript's text item delimiters to linefeed
+return appName & linefeed & winTitle & linefeed & (linesOut as text)
+"""
+    code, out, err = _run(["osascript", "-e", script], timeout=18.0)
+    if code != 0:
+        return {
+            "ok": False,
+            "code": "AX_FAIL",
+            "detail": (err or out or f"exit {code}").strip()[:400],
+            "hint": "Grant Accessibility to the process running desktop-leash",
+        }
+    lines = [ln for ln in (out or "").splitlines()]
+    app = lines[0] if lines else ""
+    win = lines[1] if len(lines) > 1 else ""
+    elements: list[dict[str, str]] = []
+    for ln in lines[2:]:
+        parts = ln.split("\t")
+        while len(parts) < 4:
+            parts.append("")
+        role, title, desc, val = parts[0], parts[1], parts[2], parts[3]
+        elements.append(
+            {
+                "role": role[:40],
+                "title": title[:60],
+                "description": desc[:60],
+                "value": val[:40],
+            }
+        )
+    return {
+        "ok": True,
+        "code": "AX_SNAPSHOT",
+        "data": {
+            "app": app,
+            "window": win[:120],
+            "elements": elements,
+            "count": len(elements),
+            "redacted": True,
+        },
+    }

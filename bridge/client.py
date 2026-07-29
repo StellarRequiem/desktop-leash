@@ -64,6 +64,12 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--yes", action="store_true")
     g.add_argument("--no", action="store_true")
     sub.add_parser("pending", help="list pending D4 confirms")
+    ax = sub.add_parser("ax", help="Phase 5 AX snapshot (frontmost window UI tree)")
+    ax.add_argument("--max", type=int, default=40)
+    d4s = sub.add_parser("d4-session", help="Phase 5 dual-control window for D4")
+    d4s.add_argument("--open", action="store_true")
+    d4s.add_argument("--close", action="store_true")
+    d4s.add_argument("--ttl", type=int, default=300)
 
     args = p.parse_args(argv)
     base = args.base
@@ -118,6 +124,18 @@ def main(argv: list[str] | None = None) -> int:
                 {"id": args.id, "ok": bool(args.yes), "no": bool(args.no)},
             )
         )
+    if args.cmd == "ax":
+        return out(
+            call(base, "/v1/action", {"action": "desktop.ax", "max": args.max})
+        )
+    if args.cmd == "d4-session":
+        if args.close:
+            return out(call(base, "/v1/d4-session", {"open": False}))
+        if args.open:
+            return out(call(base, "/v1/d4-session", {"open": True, "ttl": args.ttl}))
+        st = call(base, "/v1/status")
+        print(json.dumps({"ok": True, "d4_session": st.get("d4_session"), "require_d4_session": st.get("require_d4_session")}, indent=2))
+        return 0
     return 2
 
 

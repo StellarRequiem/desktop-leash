@@ -11,4 +11,6 @@ See full roadmap: `~/ops/DESKTOP_LEASH_PLAN.md`
 | **D4** | 3 | yes + **confirm** | quit app; press Return/Enter; risky type patterns |
 
 Phase 3: D4 returns `CONFIRM_REQUIRED` → `client.py confirm --id … --yes|--no` (TTL ~120s).  
+Phase 5: D4 also needs dual-control session: `client.py d4-session --open [--ttl 300]` first;  
+then confirm. AX observe: `client.py ax`. Version **0.5.0**.  
 Allowlist + denylist + velocity still apply.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""desktop-leash bridge — Phase 4 integration; D0–D4 with confirm gates.
+"""desktop-leash bridge — Phase 5: AX snapshot + D4 dual-control session.
 
-Loopback only. Sticky arm. App allowlist. D4 requires human confirm.
+Loopback only. Sticky arm. App allowlist. D4 requires human confirm + D4 session.
 """
 
 from __future__ import annotations
@@ -33,8 +33,15 @@ REQUIRE_D4_CONFIRM = os.environ.get("DESKTOP_LEASH_REQUIRE_CONFIRM", "1") not in
     "no",
 )
 CONFIRM_TTL_SEC = int(os.environ.get("DESKTOP_LEASH_CONFIRM_TTL", "120"))
-VERSION = "0.4.0"
-PHASE = 4
+# Dual-control: D4 also needs an open D4 session (operator arms separately)
+D4_SESSION_DEFAULT_TTL = int(os.environ.get("DESKTOP_LEASH_D4_SESSION_TTL", "300"))
+REQUIRE_D4_SESSION = os.environ.get("DESKTOP_LEASH_REQUIRE_D4_SESSION", "1") not in (
+    "0",
+    "false",
+    "no",
+)
+VERSION = "0.5.0"
+PHASE = 5
 
 DEFAULT_APP_ALLOWLIST = frozenset(
     {
@@ -99,6 +106,7 @@ ALLOWED_ACTIONS = frozenset(
         "desktop.press",
         "desktop.scroll",
         "desktop.quit",  # D4
+        "desktop.ax",  # Phase 5 observe
     }
 )
 
@@ -108,6 +116,7 @@ ACTION_TIERS = {
     "desktop.displays": 1,
     "desktop.screenshot": 1,
     "desktop.frontmost": 1,
+    "desktop.ax": 1,
     "desktop.focus": 2,
     "desktop.click": 3,
     "desktop.type": 3,
@@ -123,6 +132,8 @@ VEL_WINDOW = float(os.environ.get("DESKTOP_LEASH_VEL_WINDOW", "60"))
 
 _lock = threading.Lock()
 _arm: dict[str, Any] = {"armed": False, "until": 0.0, "token": ""}
+# Dual-control window for D4 (separate from sticky arm)
+_d4_session: dict[str, Any] = {"open": False, "until": 0.0}
 _vel: dict[str, deque[float]] = defaultdict(deque)
 # pending confirms: id -> {action, payload, created, summary, tier}
 _pending: dict[str, dict[str, Any]] = {}
@@ -141,6 +152,44 @@ def _receipt(kind: str, body: dict[str, Any]) -> None:
     line = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "kind": kind, **body}
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(line, sort_keys=True) + "\n")
+
+
+def _d4_session_active() -> bool:
+    if not REQUIRE_D4_SESSION:
+        return True
+    with _lock:
+        if not _d4_session.get("open"):
+            return False
+        until = float(_d4_session.get("until") or 0)
+        if until > 0 and _now() > until:
+            _d4_session["open"] = False
+            return False
+        return True
+
+
+def set_d4_session(*, open_session: bool, ttl: int | None = None) -> dict[str, Any]:
+    """Operator dual-control: open/close D4 session window."""
+    with _lock:
+        if open_session:
+            ttl_v = int(ttl if ttl is not None else D4_SESSION_DEFAULT_TTL)
+            until = _now() + ttl_v if ttl_v > 0 else 0.0
+            _d4_session["open"] = True
+            _d4_session["until"] = until
+        else:
+            _d4_session["open"] = False
+            _d4_session["until"] = 0.0
+        snap = dict(_d4_session)
+    _receipt("d4_session", {"open": snap["open"], "until": snap["until"]})
+    return {
+        "ok": True,
+        "code": "D4_SESSION",
+        "data": {
+            "open": snap["open"],
+            "until": snap["until"],
+            "ttl_default": D4_SESSION_DEFAULT_TTL,
+            "required": REQUIRE_D4_SESSION,
+        },
+    }
 
 
 def _arm_active() -> bool:
@@ -323,11 +372,17 @@ def status_payload() -> dict[str, Any]:
         "service": "desktop-leash",
         "version": VERSION,
         "phase": PHASE,
-        "phase_name": "grok-integration",
+        "phase_name": "ax-and-d4-dual-control",
         "armed": _arm_active(),
         "arm_until": arm.get("until"),
         "arm_mode": "toggle" if ARM_TTL_SEC <= 0 else f"timed_{ARM_TTL_SEC}s",
         "require_d4_confirm": REQUIRE_D4_CONFIRM,
+        "require_d4_session": REQUIRE_D4_SESSION,
+        "d4_session": {
+            "open": _d4_session_active(),
+            "until": float(_d4_session.get("until") or 0),
+            "default_ttl": D4_SESSION_DEFAULT_TTL,
+        },
         "pending_confirms": pending,
         "allowed_actions": sorted(ALLOWED_ACTIONS),
         "action_tiers": dict(ACTION_TIERS),
@@ -336,7 +391,7 @@ def status_payload() -> dict[str, Any]:
         "velocity": {"max": VEL_MAX, "window_sec": VEL_WINDOW},
         "permission_doc": "docs/PERMISSION_TIERS.md",
         "plan": str(Path.home() / "ops/DESKTOP_LEASH_PLAN.md"),
-        "note": "Phase 4: D1–D4 live; D4 needs confirm --yes. See docs/INTEGRATION.md + ANTI_PATTERNS.md",
+        "note": "Phase 5: AX snapshot + D4 dual-control session. D4 needs session open + confirm --yes.",
         "integration_doc": "docs/INTEGRATION.md",
         "anti_patterns_doc": "docs/ANTI_PATTERNS.md",
     }
@@ -358,6 +413,8 @@ def _execute(action: str, payload: dict[str, Any], job_id: str) -> dict[str, Any
         res = observe.screenshot(Path(out))
     elif action == "desktop.frontmost":
         res = observe.frontmost_app()
+    elif action == "desktop.ax":
+        res = observe.ax_snapshot(max_elements=int(payload.get("max") or 40))
     elif action == "desktop.focus":
         app = str(payload.get("app") or "").strip()
         if app in APP_DENYLIST:
@@ -445,6 +502,17 @@ def run_action(payload: dict[str, Any]) -> dict[str, Any]:
         if not ok_v:
             _receipt("deny", {"action": action, "reason": "VELOCITY", "detail": msg_v})
             return {"ok": False, "code": "VELOCITY", "detail": msg_v, "id": job_id}
+
+    # D4 dual-control: session must be open before confirm queue / execute
+    if high and not _d4_session_active():
+        _receipt("deny", {"action": action, "reason": "D4_SESSION_CLOSED"})
+        return {
+            "ok": False,
+            "code": "D4_SESSION_CLOSED",
+            "detail": "open D4 dual-control session first: client.py d4-session --open [--ttl 300]",
+            "id": job_id,
+            "tier": tier,
+        }
 
     # D4: require confirm unless already approved via token
     confirm_id = str(payload.get("confirm_id") or payload.get("confirmed_id") or "")
@@ -585,6 +653,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/v1/confirm":
             self._json(200, resolve_confirm(body))
             return
+        if path == "/v1/d4-session":
+            open_session = bool(body.get("open") or body.get("armed") or body.get("yes"))
+            if body.get("open") is False or body.get("close") is True:
+                open_session = False
+            ttl = body.get("ttl")
+            ttl_i = int(ttl) if ttl is not None else None
+            self._json(200, set_d4_session(open_session=open_session, ttl=ttl_i))
+            return
         self._json(404, {"ok": False, "code": "NOT_FOUND"})
 
 
@@ -596,6 +672,7 @@ def main() -> None:
     print(f"desktop-leash phase {PHASE} on http://{HOST}:{PORT}", flush=True)
     print(
         f"version={VERSION} d4_confirm={REQUIRE_D4_CONFIRM} "
+        f"d4_session_required={REQUIRE_D4_SESSION} "
         f"arm_mode={'toggle' if ARM_TTL_SEC <= 0 else ARM_TTL_SEC}",
         flush=True,
     )

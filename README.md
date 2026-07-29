@@ -1,6 +1,6 @@
 # desktop-leash
 
-**Phase 4 — Grok integration + confirm gates** full-computer-use control plane for macOS.
+**Phase 5 — AX snapshot + D4 dual-control** full-computer-use control plane for macOS.
 
 Sibling to [browser-leash](../browser-leash) (Chrome only). Same philosophy: **authority is not ambient**.
 
@@ -14,7 +14,7 @@ Sibling to [browser-leash](../browser-leash) (Chrome only). Same philosophy: **a
 
 Plan: `~/ops/DESKTOP_LEASH_PLAN.md`
 
-## Phase 4 scope
+## Phase 5 scope
 
 | Can | Cannot |
 |-----|--------|
@@ -24,7 +24,8 @@ Plan: `~/ops/DESKTOP_LEASH_PLAN.md`
 | screenshot | ambient always-on |
 | focus allowlisted app | quit Finder / system apps |
 | click / type / press / scroll if frontmost allowlisted | auto-approve D4 |
-| D4: quit / Return / risky type after **confirm --yes** | |
+| D4: quit / Return after **d4-session --open** + **confirm --yes** | |
+| AX snapshot (redacted front window) | |
 
 ## Quick start
 
@@ -63,6 +64,7 @@ Grant to the app that runs the bridge (Terminal, Ghostty, or `python` as shown b
 - `docs/LOAD.md` — macOS permissions
 - `docs/POSTABLE_EXPLAINER.md` — claim-safe public copy
 - `docs/CLAIMS.md` — claim cards, hard refuses, hold-test log
+- `docs/OPEN_SOURCE_READINESS.md` — public prep (decision deferred)
 
 ## Safety
 
@@ -74,4 +76,4 @@ Grant to the app that runs the bridge (Terminal, Ghostty, or `python` as shown b
 
 ## Version
 
-**0.4.0** — Phase 4 Grok integration docs + skill.
+**0.5.0** — Phase 5 AX + D4 dual-control session.
