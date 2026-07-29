@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI client for desktop-leash Phase 1."""
+"""CLI client for desktop-leash Phase 2."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def call(base: str, path: str, body: dict | None = None) -> dict:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="desktop-leash",
-        description="Phase 1 observe-only desktop control plane (arm-gated).",
+        description="Phase 2 desktop control plane: observe + allowlisted input.",
     )
     p.add_argument("--base", default=DEFAULT)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -39,54 +39,67 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="D0 — bridge health (no arm)")
     sub.add_parser("arm", help="sticky ARM on")
     sub.add_parser("disarm", help="DISARM off")
-    sub.add_parser("apps", help="D1 — list foreground apps")
+    sub.add_parser("apps", help="D1 — list apps")
     sub.add_parser("windows", help="D1 — list windows")
-    sub.add_parser("displays", help="D1 — display info")
-    sc = sub.add_parser("screenshot", help="D1 — full display PNG")
-    sc.add_argument("--out", default="", help="output path (default captures/)")
-    # Explicit refuses for agent clarity
-    sub.add_parser("click", help="Phase 2+ (locked)")
-    sub.add_parser("type", help="Phase 2+ (locked)")
+    sub.add_parser("displays", help="D1 — displays")
+    sub.add_parser("frontmost", help="D1 — frontmost app")
+    sc = sub.add_parser("screenshot", help="D1 — PNG")
+    sc.add_argument("--out", default="")
+
+    fo = sub.add_parser("focus", help="D2 — focus allowlisted app")
+    fo.add_argument("--app", required=True)
+
+    cl = sub.add_parser("click", help="D3 — click at screen x,y (frontmost must be allowlisted)")
+    cl.add_argument("--x", type=int, required=True)
+    cl.add_argument("--y", type=int, required=True)
+
+    ty = sub.add_parser("type", help="D3 — type text (no newlines; frontmost allowlisted)")
+    ty.add_argument("--text", required=True)
+
+    pr = sub.add_parser("press", help="D3 — key: return|tab|escape|space|arrows|…")
+    pr.add_argument("--key", default="return")
+
+    scrl = sub.add_parser("scroll", help="D3 — scroll dy (page keys)")
+    scrl.add_argument("--dy", type=int, default=400)
 
     args = p.parse_args(argv)
     base = args.base
 
+    def out(d: dict) -> int:
+        print(json.dumps(d, indent=2)[:16000])
+        return 0 if d.get("ok") else 1
+
     if args.cmd == "status":
-        print(json.dumps(call(base, "/v1/status"), indent=2))
-        return 0
+        return out(call(base, "/v1/status"))
     if args.cmd == "arm":
-        print(json.dumps(call(base, "/v1/arm", {"armed": True, "ttl": 0}), indent=2))
-        return 0
+        return out(call(base, "/v1/arm", {"armed": True, "ttl": 0}))
     if args.cmd == "disarm":
-        print(json.dumps(call(base, "/v1/arm", {"armed": False}), indent=2))
-        return 0
+        return out(call(base, "/v1/arm", {"armed": False}))
     if args.cmd == "apps":
-        print(json.dumps(call(base, "/v1/action", {"action": "desktop.apps"}), indent=2))
-        return 0
+        return out(call(base, "/v1/action", {"action": "desktop.apps"}))
     if args.cmd == "windows":
-        print(json.dumps(call(base, "/v1/action", {"action": "desktop.windows"}), indent=2)[:12000])
-        return 0
+        return out(call(base, "/v1/action", {"action": "desktop.windows"}))
     if args.cmd == "displays":
-        print(json.dumps(call(base, "/v1/action", {"action": "desktop.displays"}), indent=2))
-        return 0
+        return out(call(base, "/v1/action", {"action": "desktop.displays"}))
+    if args.cmd == "frontmost":
+        return out(call(base, "/v1/action", {"action": "desktop.frontmost"}))
     if args.cmd == "screenshot":
         body: dict = {"action": "desktop.screenshot"}
         if args.out:
             body["path"] = args.out
-        print(json.dumps(call(base, "/v1/action", body), indent=2))
-        return 0
-    if args.cmd in ("click", "type"):
-        print(
-            json.dumps(
-                {
-                    "ok": False,
-                    "code": "PHASE1_LOCKED",
-                    "detail": f"{args.cmd} is Phase 2+ — observe-only now",
-                },
-                indent=2,
-            )
+        return out(call(base, "/v1/action", body))
+    if args.cmd == "focus":
+        return out(call(base, "/v1/action", {"action": "desktop.focus", "app": args.app}))
+    if args.cmd == "click":
+        return out(
+            call(base, "/v1/action", {"action": "desktop.click", "x": args.x, "y": args.y})
         )
-        return 2
+    if args.cmd == "type":
+        return out(call(base, "/v1/action", {"action": "desktop.type", "text": args.text}))
+    if args.cmd == "press":
+        return out(call(base, "/v1/action", {"action": "desktop.press", "key": args.key}))
+    if args.cmd == "scroll":
+        return out(call(base, "/v1/action", {"action": "desktop.scroll", "dy": args.dy}))
     return 2
 
 
