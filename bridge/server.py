@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""desktop-leash bridge — Phase 3 confirm gates + Phase 2 input.
+"""desktop-leash bridge — Phase 4 integration; D0–D4 with confirm gates.
 
 Loopback only. Sticky arm. App allowlist. D4 requires human confirm.
 """

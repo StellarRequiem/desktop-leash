@@ -52,6 +52,13 @@ Before: agent either stuck in chat or trusted with everything.
 Now: split surfaces — shell for code, browser-leash for Chrome, desktop-leash for other GUI —
 each with arm, allowlists, receipts, and human gates on high blast.
 
+Session shape today:
+1) Operator ARMs the plane they mean (browser and/or desktop).
+2) Agent does the work on the right surface — no “just click whatever.”
+3) Wrong app / unarmed / disabled Post → hard refuse (we red-teamed this).
+4) High-blast (quit, Return, publish) → human confirm, not silent execute.
+5) DISARM when the day ends. Authority is not ambient.
+
 That’s how you get leverage without ambient authority.
 ```
 

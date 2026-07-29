@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI client for desktop-leash Phase 3."""
+"""CLI client for desktop-leash Phase 4."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def call(base: str, path: str, body: dict | None = None) -> dict:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="desktop-leash",
-        description="Phase 3 desktop control plane: observe + allowlisted input + D4 confirm.",
+        description="Phase 4 desktop control plane: observe + allowlisted input + D4 confirm.",
     )
     p.add_argument("--base", default=DEFAULT)
     sub = p.add_subparsers(dest="cmd", required=True)

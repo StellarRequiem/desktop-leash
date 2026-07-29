@@ -14,7 +14,7 @@ Sibling to [browser-leash](../browser-leash) (Chrome only). Same philosophy: **a
 
 Plan: `~/ops/DESKTOP_LEASH_PLAN.md`
 
-## Phase 3 scope
+## Phase 4 scope
 
 | Can | Cannot |
 |-----|--------|
