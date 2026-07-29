@@ -18,14 +18,15 @@ Three planes, same rule: authority is not ambient.
 
 How work changes:
 • Agent can ship + prove on disk/web under gates
-• Unarmed / wrong app / disabled Post → refuse (we red-teamed this)
+• Unarmed / wrong app / disabled Post → refuse (operator hold-tests)
 • High-blast needs explicit confirm — not silent execute
 
-pip install mcp-assure && mcp-assure check
-# browser-leash + desktop-leash are local control planes on this machine
+pip install mcp-assure && mcp-assure check   # public package
+# browser-leash + desktop-leash = local control planes (not a public install yet)
 
 Not a full SOC. Not unattended OS takeover.
 ```
+# Claim cards: docs/CLAIMS.md
 
 ---
 
@@ -41,9 +42,9 @@ Zero core deps. Re-runnable purple fixtures. Not a hosted vuln scanner
 
 browser-leash (local) — Chrome session control for X/GitHub/site.
 Sticky ARM toggle. Deny unknown hosts/actions. Draft + human-gated publish
-when React won’t enable Post. Hold-test: unarmed path refused.
+when React won’t enable Post. Operator hold-test: unarmed / disabled-Post refuse.
 
-desktop-leash (local) — Phase 4 computer-use path for the rest of the Mac:
+desktop-leash (local) — Phase 4 path for the rest of the Mac (not a public product):
 screenshot, list apps/windows, focus allowlisted apps, click/type/press/scroll.
 Quit and Return require confirm --yes. Password managers denylisted.
 
@@ -55,7 +56,7 @@ each with arm, allowlists, receipts, and human gates on high blast.
 Session shape today:
 1) Operator ARMs the plane they mean (browser and/or desktop).
 2) Agent does the work on the right surface — no “just click whatever.”
-3) Wrong app / unarmed / disabled Post → hard refuse (we red-teamed this).
+3) Wrong app / unarmed / disabled Post → hard refuse (operator hold-tests).
 4) High-blast (quit, Return, publish) → human confirm, not silent execute.
 5) DISARM when the day ends. Authority is not ambient.
 
@@ -66,7 +67,15 @@ That’s how you get leverage without ambient authority.
 
 ## What not to claim
 
-- “Full computer use like a human with no limits”
-- “Stops all agent attacks / full SOC”
-- “Auto-posts to X without human”
-- “Every Grok tool is gated” (shell tools are separate; mcp-assure is for wired hosts)
+Full claim cards + hold-test log: **`docs/CLAIMS.md`**.
+
+| Do not say | Closest true wording |
+|------------|----------------------|
+| Full computer use like a human with no limits | Arm-gated, allowlisted desktop actions + human confirm on high-blast |
+| Stops all agent attacks / full SOC | Runtime gate for mediated tool calls; local leashes for browser/desktop |
+| Auto-posts to X without human | Draft under leash; publish only after human confirm |
+| Every Grok tool is gated | mcp-assure gates calls on the assured host path; shell is separate |
+| We red-teamed the stack (formal RT) | Operator hold-tests: unarmed / denylist / confirm-reject refuse |
+| Public full CUA product | mcp-assure is public; browser- + desktop-leash are local today |
+
+**Also forbidden:** win-rate %, “unbreakable”, “would have stopped [incident] end-to-end.”

@@ -62,6 +62,7 @@ Grant to the app that runs the bridge (Terminal, Ghostty, or `python` as shown b
 - `docs/ANTI_PATTERNS.md` — never-do list
 - `docs/LOAD.md` — macOS permissions
 - `docs/POSTABLE_EXPLAINER.md` — claim-safe public copy
+- `docs/CLAIMS.md` — claim cards, hard refuses, hold-test log
 
 ## Safety
 
