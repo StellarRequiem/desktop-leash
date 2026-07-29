@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""desktop-leash bridge — Phase 2 allowlisted input (stdlib + macOS tools).
+"""desktop-leash bridge — Phase 3 confirm gates + Phase 2 input.
 
-Loopback only. Sticky arm. Deny-by-default. App allowlist for D2/D3.
+Loopback only. Sticky arm. App allowlist. D4 requires human confirm.
 """
 
 from __future__ import annotations
@@ -25,11 +25,17 @@ CAPTURES = ROOT / "captures"
 STATE_PATH = Path(__file__).resolve().parent / ".state.json"
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("DESKTOP_LEASH_PORT", "8757"))
-ARM_TTL_SEC = int(os.environ.get("DESKTOP_LEASH_ARM_TTL", "0"))  # 0 = sticky
-VERSION = "0.2.0"
-PHASE = 2
+ARM_TTL_SEC = int(os.environ.get("DESKTOP_LEASH_ARM_TTL", "0"))
+# D4 confirm required by default; set DESKTOP_LEASH_REQUIRE_CONFIRM=0 to disable (not recommended)
+REQUIRE_D4_CONFIRM = os.environ.get("DESKTOP_LEASH_REQUIRE_CONFIRM", "1") not in (
+    "0",
+    "false",
+    "no",
+)
+CONFIRM_TTL_SEC = int(os.environ.get("DESKTOP_LEASH_CONFIRM_TTL", "120"))
+VERSION = "0.3.0"
+PHASE = 3
 
-# Default allowlist — process names as System Events reports them
 DEFAULT_APP_ALLOWLIST = frozenset(
     {
         "Terminal",
@@ -48,7 +54,6 @@ DEFAULT_APP_ALLOWLIST = frozenset(
         "Finder",
         "Preview",
         "Notes",
-        " syncthing",  # noop guard against empty
     }
 )
 
@@ -56,7 +61,6 @@ DEFAULT_APP_ALLOWLIST = frozenset(
 def _load_allowlist() -> frozenset[str]:
     extra = os.environ.get("DESKTOP_LEASH_ALLOW_APPS", "")
     names = set(DEFAULT_APP_ALLOWLIST)
-    names.discard(" syncthing")
     for part in extra.split(","):
         p = part.strip()
         if p:
@@ -66,7 +70,6 @@ def _load_allowlist() -> frozenset[str]:
 
 APP_ALLOWLIST = _load_allowlist()
 
-# Deny even if somehow matched
 APP_DENYLIST = frozenset(
     {
         "1Password",
@@ -80,21 +83,22 @@ APP_DENYLIST = frozenset(
     }
 )
 
+# Apps we never quit even if allowlisted (safety)
+QUIT_DENY = frozenset({"Finder", "WindowServer", "loginwindow", "Dock", "SystemUIServer"})
+
 ALLOWED_ACTIONS = frozenset(
     {
-        # D1 observe
         "desktop.apps",
         "desktop.windows",
         "desktop.displays",
         "desktop.screenshot",
         "desktop.frontmost",
-        # D2 focus
         "desktop.focus",
-        # D3 input
         "desktop.click",
         "desktop.type",
         "desktop.press",
         "desktop.scroll",
+        "desktop.quit",  # D4
     }
 )
 
@@ -107,17 +111,21 @@ ACTION_TIERS = {
     "desktop.focus": 2,
     "desktop.click": 3,
     "desktop.type": 3,
-    "desktop.press": 3,
+    "desktop.press": 3,  # may escalate to 4 for return/enter
     "desktop.scroll": 3,
+    "desktop.quit": 4,
 }
 
-# Velocity: max input events per window
+HIGH_BLAST_KEYS = frozenset({"return", "enter"})
+
 VEL_MAX = int(os.environ.get("DESKTOP_LEASH_VEL_MAX", "40"))
 VEL_WINDOW = float(os.environ.get("DESKTOP_LEASH_VEL_WINDOW", "60"))
 
 _lock = threading.Lock()
 _arm: dict[str, Any] = {"armed": False, "until": 0.0, "token": ""}
 _vel: dict[str, deque[float]] = defaultdict(deque)
+# pending confirms: id -> {action, payload, created, summary, tier}
+_pending: dict[str, dict[str, Any]] = {}
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import observe  # noqa: E402
@@ -160,7 +168,11 @@ def _set_arm(armed: bool, ttl: int | None = None) -> dict[str, Any]:
         snap = dict(_arm)
     _receipt(
         "arm",
-        {"armed": snap["armed"], "until": snap["until"], "mode": "toggle" if not snap["until"] else "timed"},
+        {
+            "armed": snap["armed"],
+            "until": snap["until"],
+            "mode": "toggle" if not snap["until"] else "timed",
+        },
     )
     _save_state()
     return snap
@@ -206,18 +218,12 @@ def _velocity_ok(bucket: str = "input") -> tuple[bool, str]:
 
 
 def _app_allowed(name: str) -> bool:
-    if not name:
+    if not name or name in APP_DENYLIST:
         return False
-    if name in APP_DENYLIST:
-        return False
-    if name in APP_ALLOWLIST:
-        return True
-    # partial match for "Google Chrome Helper" etc. — only allow exact list for safety
-    return False
+    return name in APP_ALLOWLIST
 
 
 def _require_frontmost_allowed() -> dict[str, Any] | None:
-    """Return error dict if frontmost not allowlisted; else None."""
     fm = observe.frontmost_app()
     if not fm.get("ok"):
         return {
@@ -243,19 +249,86 @@ def _require_frontmost_allowed() -> dict[str, Any] | None:
     return None
 
 
+def _purge_expired_pending() -> None:
+    now = _now()
+    with _lock:
+        dead = [i for i, p in _pending.items() if now - float(p.get("created") or 0) > CONFIRM_TTL_SEC]
+        for i in dead:
+            _pending.pop(i, None)
+
+
+def _queue_confirm(action: str, payload: dict[str, Any], summary: str, tier: int = 4) -> dict[str, Any]:
+    _purge_expired_pending()
+    cid = str(uuid.uuid4())
+    entry = {
+        "id": cid,
+        "action": action,
+        "payload": dict(payload),
+        "summary": summary[:500],
+        "tier": tier,
+        "created": _now(),
+        "expires": _now() + CONFIRM_TTL_SEC,
+    }
+    with _lock:
+        _pending[cid] = entry
+    _receipt("confirm_required", {"id": cid, "action": action, "summary": summary[:200]})
+    return {
+        "ok": False,
+        "code": "CONFIRM_REQUIRED",
+        "detail": f"D4 high-blast: confirm within {CONFIRM_TTL_SEC}s",
+        "id": cid,
+        "data": {
+            "confirm_id": cid,
+            "summary": summary,
+            "action": action,
+            "expires_in_sec": CONFIRM_TTL_SEC,
+            "how": "python3 bridge/client.py confirm --id %s --yes" % cid,
+        },
+    }
+
+
+def _is_high_blast(action: str, payload: dict[str, Any]) -> tuple[bool, str]:
+    if action == "desktop.quit":
+        app = str(payload.get("app") or "")
+        return True, f"QUIT application {app!r}"
+    if action == "desktop.press":
+        key = str(payload.get("key") or "").strip().lower()
+        if key in HIGH_BLAST_KEYS:
+            return True, f"PRESS {key} (may execute focused shell/command)"
+    # Optional: type that looks like destructive shell
+    if action == "desktop.type":
+        t = str(payload.get("text") or "").lower()
+        for bad in ("rm -rf", "sudo ", "mkfs", "dd if=", ":(){", "curl | sh", "wget | sh"):
+            if bad in t:
+                return True, f"TYPE matches high-risk pattern {bad!r}"
+    return False, ""
+
+
 def status_payload() -> dict[str, Any]:
+    _purge_expired_pending()
     with _lock:
         arm = dict(_arm)
+        pending = [
+            {
+                "id": p["id"],
+                "action": p["action"],
+                "summary": p["summary"],
+                "expires_in": max(0, int(p["expires"] - _now())),
+            }
+            for p in _pending.values()
+        ]
     return {
         "ok": True,
         "bridge": "up",
         "service": "desktop-leash",
         "version": VERSION,
         "phase": PHASE,
-        "phase_name": "allowlisted-input",
+        "phase_name": "confirm-gates",
         "armed": _arm_active(),
         "arm_until": arm.get("until"),
         "arm_mode": "toggle" if ARM_TTL_SEC <= 0 else f"timed_{ARM_TTL_SEC}s",
+        "require_d4_confirm": REQUIRE_D4_CONFIRM,
+        "pending_confirms": pending,
         "allowed_actions": sorted(ALLOWED_ACTIONS),
         "action_tiers": dict(ACTION_TIERS),
         "app_allowlist": sorted(APP_ALLOWLIST),
@@ -263,47 +336,12 @@ def status_payload() -> dict[str, Any]:
         "velocity": {"max": VEL_MAX, "window_sec": VEL_WINDOW},
         "permission_doc": "docs/PERMISSION_TIERS.md",
         "plan": str(Path.home() / "ops/DESKTOP_LEASH_PLAN.md"),
-        "note": "Phase 2: focus/click/type/press/scroll only if frontmost app allowlisted. No D4 yet.",
+        "note": "Phase 3: D4 (quit, Return/Enter, risky type) needs client confirm --yes",
     }
 
 
-def run_action(payload: dict[str, Any]) -> dict[str, Any]:
-    action = str(payload.get("action") or "").strip()
-    if action in ("", "status"):
-        return status_payload()
-
-    if action not in ALLOWED_ACTIONS:
-        if action.startswith("desktop."):
-            _receipt("deny", {"action": action, "reason": "PHASE_LOCKED"})
-            return {
-                "ok": False,
-                "code": "PHASE_LOCKED",
-                "detail": f"{action!r} not in Phase {PHASE}. See plan for Phase 3+.",
-            }
-        _receipt("deny", {"action": action, "reason": "UNKNOWN_ACTION"})
-        return {"ok": False, "code": "UNKNOWN_ACTION", "detail": f"unknown action {action!r}"}
-
-    if not _arm_active():
-        _receipt("deny", {"action": action, "reason": "NOT_ARMED"})
-        return {
-            "ok": False,
-            "code": "NOT_ARMED",
-            "detail": "desktop-leash must be ARMED before D1+ actions",
-        }
-
-    tier = ACTION_TIERS.get(action, 9)
-    job_id = str(uuid.uuid4())
-    _receipt("enqueue", {"id": job_id, "action": action, "tier": tier})
-
-    # D3 velocity
-    if tier >= 3:
-        ok_v, msg_v = _velocity_ok("input")
-        if not ok_v:
-            _receipt("deny", {"action": action, "reason": "VELOCITY", "detail": msg_v})
-            return {"ok": False, "code": "VELOCITY", "detail": msg_v, "id": job_id}
-
-    res: dict[str, Any]
-
+def _execute(action: str, payload: dict[str, Any], job_id: str) -> dict[str, Any]:
+    """Run action body after gates passed (and optional confirm)."""
     if action == "desktop.apps":
         res = observe.list_apps()
     elif action == "desktop.windows":
@@ -333,45 +371,161 @@ def run_action(payload: dict[str, Any]) -> dict[str, Any]:
             res = observe.focus_app(app)
     elif action == "desktop.click":
         gate = _require_frontmost_allowed()
-        if gate:
-            res = gate
-        else:
-            res = observe.click_xy(int(payload.get("x") or 0), int(payload.get("y") or 0))
+        res = gate if gate else observe.click_xy(int(payload.get("x") or 0), int(payload.get("y") or 0))
     elif action == "desktop.type":
         gate = _require_frontmost_allowed()
-        if gate:
-            res = gate
-        else:
-            res = observe.type_text(str(payload.get("text") or ""))
+        res = gate if gate else observe.type_text(str(payload.get("text") or ""))
     elif action == "desktop.press":
         gate = _require_frontmost_allowed()
         if gate:
             res = gate
         else:
             key = str(payload.get("key") or "return")
-            # Soft-guard: Return into Terminal could execute — still allowed but receipted
             res = observe.press_key(key)
-            if res.get("ok") and key.lower() in ("return", "enter"):
-                res["warning"] = "Return/Enter may execute focused shell command — use intentionally"
+            if res.get("ok") and key.lower() in HIGH_BLAST_KEYS:
+                res["warning"] = "Return/Enter may execute focused shell command"
     elif action == "desktop.scroll":
         gate = _require_frontmost_allowed()
-        if gate:
-            res = gate
+        res = gate if gate else observe.scroll_dy(int(payload.get("dy") or 0))
+    elif action == "desktop.quit":
+        app = str(payload.get("app") or "").strip()
+        if app in APP_DENYLIST or app in QUIT_DENY:
+            res = {"ok": False, "code": "APP_DENIED", "detail": f"cannot quit {app!r}"}
+        elif not _app_allowed(app):
+            res = {
+                "ok": False,
+                "code": "APP_NOT_ALLOWLISTED",
+                "detail": f"cannot quit {app!r}",
+            }
         else:
-            res = observe.scroll_dy(int(payload.get("dy") or 0))
+            res = observe.quit_app(app)
     else:
         res = {"ok": False, "code": "UNKNOWN_ACTION", "detail": action}
+    return res
 
-    res = {**res, "id": job_id, "action": action}
-    _receipt(
-        "result",
-        {
-            "id": job_id,
-            "action": action,
-            "ok": res.get("ok"),
-            "code": res.get("code"),
-        },
-    )
+
+def run_action(payload: dict[str, Any]) -> dict[str, Any]:
+    action = str(payload.get("action") or "").strip()
+    if action in ("", "status"):
+        return status_payload()
+
+    # Confirm resolution is a separate path
+    if action == "desktop.confirm":
+        return {"ok": False, "code": "USE_CONFIRM_ENDPOINT", "detail": "POST /v1/confirm"}
+
+    if action not in ALLOWED_ACTIONS:
+        _receipt("deny", {"action": action, "reason": "UNKNOWN_OR_LOCKED"})
+        return {
+            "ok": False,
+            "code": "UNKNOWN_ACTION",
+            "detail": f"unknown or locked action {action!r}",
+        }
+
+    if not _arm_active():
+        _receipt("deny", {"action": action, "reason": "NOT_ARMED"})
+        return {
+            "ok": False,
+            "code": "NOT_ARMED",
+            "detail": "desktop-leash must be ARMED before D1+ actions",
+        }
+
+    tier = ACTION_TIERS.get(action, 9)
+    # Escalate press return/enter to tier 4
+    high, summary = _is_high_blast(action, payload)
+    if high:
+        tier = 4
+
+    job_id = str(uuid.uuid4())
+    _receipt("enqueue", {"id": job_id, "action": action, "tier": tier, "high_blast": high})
+
+    if tier >= 3:
+        ok_v, msg_v = _velocity_ok("input")
+        if not ok_v:
+            _receipt("deny", {"action": action, "reason": "VELOCITY", "detail": msg_v})
+            return {"ok": False, "code": "VELOCITY", "detail": msg_v, "id": job_id}
+
+    # D4: require confirm unless already approved via token
+    confirm_id = str(payload.get("confirm_id") or payload.get("confirmed_id") or "")
+    if high and REQUIRE_D4_CONFIRM:
+        if not confirm_id:
+            return _queue_confirm(action, payload, summary or action, tier=4)
+        with _lock:
+            pend = _pending.get(confirm_id)
+        if not pend:
+            return {
+                "ok": False,
+                "code": "CONFIRM_UNKNOWN",
+                "detail": f"no pending confirm {confirm_id!r} (expired or wrong id)",
+            }
+        if pend.get("action") != action:
+            return {
+                "ok": False,
+                "code": "CONFIRM_MISMATCH",
+                "detail": "confirm_id action mismatch",
+            }
+        # consume and execute
+        with _lock:
+            _pending.pop(confirm_id, None)
+        _receipt("confirm_consumed", {"id": confirm_id, "action": action})
+
+    res = _execute(action, payload, job_id)
+    res = {**res, "id": job_id, "action": action, "tier": tier}
+    _receipt("result", {"id": job_id, "action": action, "ok": res.get("ok"), "code": res.get("code")})
+    return res
+
+
+def resolve_confirm(body: dict[str, Any]) -> dict[str, Any]:
+    """POST /v1/confirm {id, ok: true|false} — on yes, execute pending action."""
+    _purge = _now()
+    cid = str(body.get("id") or body.get("confirm_id") or "").strip()
+    approved = bool(body.get("ok") or body.get("yes") or body.get("approve"))
+    if body.get("ok") is False or body.get("yes") is False or body.get("approve") is False:
+        approved = False
+    if body.get("no") is True:
+        approved = False
+
+    if not cid:
+        return {"ok": False, "code": "MISSING_ID", "detail": "confirm id required"}
+
+    with _lock:
+        pend = _pending.get(cid)
+        if pend and _purge - float(pend.get("created") or 0) > CONFIRM_TTL_SEC:
+            _pending.pop(cid, None)
+            pend = None
+
+    if not pend:
+        return {"ok": False, "code": "CONFIRM_UNKNOWN", "detail": "expired or unknown confirm id"}
+
+    if not approved:
+        with _lock:
+            _pending.pop(cid, None)
+        _receipt("confirm_rejected", {"id": cid, "action": pend["action"]})
+        return {
+            "ok": True,
+            "code": "CONFIRM_REJECTED",
+            "detail": "operator rejected high-blast action",
+            "data": {"id": cid, "action": pend["action"]},
+        }
+
+    if not _arm_active():
+        return {"ok": False, "code": "NOT_ARMED", "detail": "re-arm before confirming"}
+
+    # Execute with confirm_id so run_action path... simpler: call _execute directly
+    with _lock:
+        _pending.pop(cid, None)
+    action = pend["action"]
+    payload = dict(pend.get("payload") or {})
+    job_id = str(uuid.uuid4())
+    _receipt("confirm_approved", {"id": cid, "action": action, "job": job_id})
+    res = _execute(action, payload, job_id)
+    res = {
+        **res,
+        "id": job_id,
+        "action": action,
+        "confirm_id": cid,
+        "tier": 4,
+    }
+    _receipt("result", {"id": job_id, "action": action, "ok": res.get("ok"), "code": res.get("code")})
     return res
 
 
@@ -426,6 +580,9 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
             return
+        if path == "/v1/confirm":
+            self._json(200, resolve_confirm(body))
+            return
         self._json(404, {"ok": False, "code": "NOT_FOUND"})
 
 
@@ -436,8 +593,8 @@ def main() -> None:
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"desktop-leash phase {PHASE} on http://{HOST}:{PORT}", flush=True)
     print(
-        f"version={VERSION} arm_mode={'toggle' if ARM_TTL_SEC <= 0 else ARM_TTL_SEC} "
-        f"allowlist={len(APP_ALLOWLIST)}",
+        f"version={VERSION} d4_confirm={REQUIRE_D4_CONFIRM} "
+        f"arm_mode={'toggle' if ARM_TTL_SEC <= 0 else ARM_TTL_SEC}",
         flush=True,
     )
     try:

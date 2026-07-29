@@ -1,6 +1,6 @@
 # desktop-leash
 
-**Phase 2 — observe + allowlisted input** full-computer-use control plane for macOS.
+**Phase 3 — confirm gates + allowlisted input** full-computer-use control plane for macOS.
 
 Sibling to [browser-leash](../browser-leash) (Chrome only). Same philosophy: **authority is not ambient**.
 
@@ -14,7 +14,7 @@ Sibling to [browser-leash](../browser-leash) (Chrome only). Same philosophy: **a
 
 Plan: `~/ops/DESKTOP_LEASH_PLAN.md`
 
-## Phase 2 scope
+## Phase 3 scope
 
 | Can | Cannot |
 |-----|--------|
@@ -22,8 +22,9 @@ Plan: `~/ops/DESKTOP_LEASH_PLAN.md`
 | arm / disarm (sticky toggle) | password managers / Mail / Messages |
 | list apps / windows / displays / frontmost | remote access |
 | screenshot | ambient always-on |
-| focus allowlisted app | D4 high-blast (Phase 3) |
-| click / type / press / scroll if frontmost allowlisted | |
+| focus allowlisted app | quit Finder / system apps |
+| click / type / press / scroll if frontmost allowlisted | auto-approve D4 |
+| D4: quit / Return / risky type after **confirm --yes** | |
 
 ## Quick start
 
@@ -39,6 +40,10 @@ python3 ~/desktop-leash/bridge/client.py windows
 python3 ~/desktop-leash/bridge/client.py screenshot --out /tmp/desk.png
 python3 ~/desktop-leash/bridge/client.py focus --app TextEdit
 python3 ~/desktop-leash/bridge/client.py type --text "hello from desktop-leash"
+# D4 — needs confirm
+python3 ~/desktop-leash/bridge/client.py press --key return
+# → CONFIRM_REQUIRED + confirm_id
+python3 ~/desktop-leash/bridge/client.py confirm --id <id> --yes   # or --no
 python3 ~/desktop-leash/bridge/client.py disarm   # when done
 ```
 
@@ -61,4 +66,4 @@ Grant to the app that runs the bridge (Terminal, Ghostty, or `python` as shown b
 
 ## Version
 
-**0.2.0** — Phase 2 allowlisted input.
+**0.3.0** — Phase 3 D4 confirm gates.

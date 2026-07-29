@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI client for desktop-leash Phase 2."""
+"""CLI client for desktop-leash Phase 3."""
 
 from __future__ import annotations
 
@@ -31,43 +31,46 @@ def call(base: str, path: str, body: dict | None = None) -> dict:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="desktop-leash",
-        description="Phase 2 desktop control plane: observe + allowlisted input.",
+        description="Phase 3 desktop control plane: observe + allowlisted input + D4 confirm.",
     )
     p.add_argument("--base", default=DEFAULT)
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("status", help="D0 — bridge health (no arm)")
-    sub.add_parser("arm", help="sticky ARM on")
-    sub.add_parser("disarm", help="DISARM off")
-    sub.add_parser("apps", help="D1 — list apps")
-    sub.add_parser("windows", help="D1 — list windows")
-    sub.add_parser("displays", help="D1 — displays")
-    sub.add_parser("frontmost", help="D1 — frontmost app")
-    sc = sub.add_parser("screenshot", help="D1 — PNG")
+    sub.add_parser("status")
+    sub.add_parser("arm")
+    sub.add_parser("disarm")
+    sub.add_parser("apps")
+    sub.add_parser("windows")
+    sub.add_parser("displays")
+    sub.add_parser("frontmost")
+    sc = sub.add_parser("screenshot")
     sc.add_argument("--out", default="")
-
-    fo = sub.add_parser("focus", help="D2 — focus allowlisted app")
+    fo = sub.add_parser("focus")
     fo.add_argument("--app", required=True)
-
-    cl = sub.add_parser("click", help="D3 — click at screen x,y (frontmost must be allowlisted)")
+    cl = sub.add_parser("click")
     cl.add_argument("--x", type=int, required=True)
     cl.add_argument("--y", type=int, required=True)
-
-    ty = sub.add_parser("type", help="D3 — type text (no newlines; frontmost allowlisted)")
+    ty = sub.add_parser("type")
     ty.add_argument("--text", required=True)
-
-    pr = sub.add_parser("press", help="D3 — key: return|tab|escape|space|arrows|…")
+    pr = sub.add_parser("press")
     pr.add_argument("--key", default="return")
-
-    scrl = sub.add_parser("scroll", help="D3 — scroll dy (page keys)")
+    scrl = sub.add_parser("scroll")
     scrl.add_argument("--dy", type=int, default=400)
+    qt = sub.add_parser("quit", help="D4 — quit allowlisted app (needs confirm)")
+    qt.add_argument("--app", required=True)
+    cf = sub.add_parser("confirm", help="approve/reject pending D4 action")
+    cf.add_argument("--id", required=True, help="confirm_id from CONFIRM_REQUIRED")
+    g = cf.add_mutually_exclusive_group(required=True)
+    g.add_argument("--yes", action="store_true")
+    g.add_argument("--no", action="store_true")
+    sub.add_parser("pending", help="list pending D4 confirms")
 
     args = p.parse_args(argv)
     base = args.base
 
     def out(d: dict) -> int:
         print(json.dumps(d, indent=2)[:16000])
-        return 0 if d.get("ok") else 1
+        return 0 if d.get("ok") or d.get("code") == "CONFIRM_REQUIRED" else 1
 
     if args.cmd == "status":
         return out(call(base, "/v1/status"))
@@ -100,6 +103,21 @@ def main(argv: list[str] | None = None) -> int:
         return out(call(base, "/v1/action", {"action": "desktop.press", "key": args.key}))
     if args.cmd == "scroll":
         return out(call(base, "/v1/action", {"action": "desktop.scroll", "dy": args.dy}))
+    if args.cmd == "quit":
+        return out(call(base, "/v1/action", {"action": "desktop.quit", "app": args.app}))
+    if args.cmd == "pending":
+        st = call(base, "/v1/status")
+        pend = st.get("pending_confirms") or []
+        print(json.dumps({"ok": True, "pending_confirms": pend}, indent=2))
+        return 0
+    if args.cmd == "confirm":
+        return out(
+            call(
+                base,
+                "/v1/confirm",
+                {"id": args.id, "ok": bool(args.yes), "no": bool(args.no)},
+            )
+        )
     return 2
 
 

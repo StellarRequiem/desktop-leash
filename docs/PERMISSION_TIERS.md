@@ -8,6 +8,7 @@ See full roadmap: `~/ops/DESKTOP_LEASH_PLAN.md`
 | **D1** | 1–2 | yes | apps, windows, displays, screenshot, frontmost |
 | **D2** | 2 | yes | `desktop.focus` (allowlist only) |
 | **D3** | 2 | yes | click / type / press / scroll if **frontmost allowlisted** |
-| **D4** | 3 | yes + confirm | high-blast (not built) |
+| **D4** | 3 | yes + **confirm** | quit app; press Return/Enter; risky type patterns |
 
-Phase 2 enforces app allowlist + denylist + input velocity (~40/min).
+Phase 3: D4 returns `CONFIRM_REQUIRED` → `client.py confirm --id … --yes|--no` (TTL ~120s).  
+Allowlist + denylist + velocity still apply.

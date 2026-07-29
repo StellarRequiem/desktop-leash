@@ -330,3 +330,19 @@ def scroll_dy(dy: int) -> dict[str, Any]:
         time.sleep(0.05)
     return {"ok": True, "code": "SCROLLED", "data": {"dy": dy, "steps": steps, "method": key}}
 
+
+def quit_app(app_name: str) -> dict[str, Any]:
+    """Quit an application (D4 high-blast — confirm required by server)."""
+    name = app_name.strip()
+    if not name or len(name) > 80:
+        return {"ok": False, "code": "BAD_APP", "detail": "invalid app name"}
+    script = f'tell application "{_as_str(name)}" to quit'
+    code, out, err = _run(["osascript", "-e", script], timeout=15.0)
+    if code != 0:
+        return {
+            "ok": False,
+            "code": "QUIT_FAIL",
+            "detail": (err or out).strip()[:300],
+        }
+    return {"ok": True, "code": "QUIT", "data": {"app": name}}
+
