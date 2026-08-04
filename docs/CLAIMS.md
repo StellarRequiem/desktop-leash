@@ -27,16 +27,16 @@ Public language must stay **≤ evidence**. Pair with:
 | Field | Value |
 |-------|--------|
 | **State** | **Verified locally** · **not Published** as a public product (local control plane) |
-| **Evidence** | Bridge `:8756` · extension **0.3.7** live hello match · sticky ARM · `require_post_confirm` · host allowlist · receipts under `~/browser-leash/receipts/` · operator hold-tests (NOT_ARMED / Post disabled refuse) |
-| **Caveats** | Chrome only. Not ambient RPA. Auto-enable of X Post button still limited (React). Draft ≠ publish. Local-only; no public install story yet. |
-| **Public wording** | “Local Chrome control plane with sticky arm, host allowlist, and human confirm on publish — not auto-post.” |
+| **Evidence** | Bridge `:8756` · extension **0.5.0** · sticky ARM · `require_post_confirm` · host allowlist · ambient tabs/wait/find/links · article read/search · receipts · hold-tests + `agent-control` smoke/proof |
+| **Caveats** | Chrome only. Not ambient RPA. Draft ≠ publish. Local open-source; not a hosted browser product. |
+| **Public wording** | “Local Chrome control plane with sticky arm, host allowlist, ambient tab tools under arm, and human confirm on publish — not auto-post.” |
 
 ### Claim C — Desktop observe + allowlisted input (desktop-leash)
 
 | Field | Value |
 |-------|--------|
-| **State** | **Verified locally** (Phase 6 CUA depth) · **not Published** as product |
-| **Evidence** | Bridge `:8757` · **v0.4.0** · phase=4 · sticky arm · D4 `require_d4_confirm` · hold-tests 2026-07-29: `NOT_ARMED`, `APP_DENIED` (1Password), `CONFIRM_REQUIRED` → `CONFIRM_REJECTED` on Return · skill + INTEGRATION/ANTI_PATTERNS |
+| **State** | **Verified locally** (phase 7 layout-control era) · **not** a separate public product package |
+| **Evidence** | Bridge `:8757` · **v0.7.0** · sticky arm · D4 · layout/click_window · hold-tests + denylist (1Password) via host smoke |
 | **Caveats** | Allowlisted apps only. Password managers denylisted. Quit/Return need human confirm. Not full human-equivalent CUA. Screenshots may hold PII (local only). |
 | **Public wording** | “Local macOS desktop control plane: arm-gated observe and allowlisted input, with human confirm on high-blast actions — not unattended OS takeover.” |
 
@@ -44,9 +44,9 @@ Public language must stay **≤ evidence**. Pair with:
 
 | Field | Value |
 |-------|--------|
-| **State** | **Candidate → Verified locally** as *operating practice* · **not** a third-party audited product claim |
-| **Evidence** | Live dual bridges; routing docs `INTEGRATION.md`; refuse paths re-run; skill SOPs; operator protocol red lines |
-| **Caveats** | Narrative about *how we work*, not a compliance certification. Shell remains high-trust and separate. Grok host wire for all tools is optional proof (`examples/grok_host_wire.py`) — do not claim every Grok tool is gated. |
+| **State** | **Verified locally** as operating practice · paper: Authority Is Not Ambient · **not** third-party audited product certification |
+| **Evidence** | Dual bridges; AssuredPlaneHost; agent-soc FREEZE; `cli.py proof` board; public GitHub siblings |
+| **Caveats** | Native host shell may bypass FREEZE. Narrative about mediated path, not compliance certification. |
 | **Public wording** | “Split surfaces — shell for code, browser-leash for Chrome, desktop-leash for other GUI, mcp-assure when the host wires it — each with arm/allowlists/receipts where built.” |
 
 ---
