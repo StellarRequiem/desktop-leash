@@ -170,10 +170,13 @@ def list_displays() -> dict[str, Any]:
 
 def screenshot(out_path: Path, *, interactive: bool = False) -> dict[str, Any]:
     """Capture screen to PNG. Requires Screen Recording permission for this process."""
+    from screencap_util import screencapture_bin
+
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # -x = no sound; full display
-    cmd = ["screencapture", "-x"]
+    bin_path = screencapture_bin()
+    cmd = [bin_path, "-x"]
     if interactive:
         cmd.append("-i")  # not for agent default
     cmd.append(str(out_path))
@@ -183,8 +186,12 @@ def screenshot(out_path: Path, *, interactive: bool = False) -> dict[str, Any]:
             "ok": False,
             "code": "SCREENSHOT_FAIL",
             "detail": err.strip() or f"exit {code} or empty file",
-            "hint": "System Settings → Privacy & Security → Screen Recording → allow Terminal/python (or the app hosting the bridge)",
+            "hint": (
+                "System Settings → Privacy & Security → Screen Recording → allow the app "
+                "hosting desktop-leash (Terminal/python). Binary: " + bin_path
+            ),
             "path": str(out_path),
+            "bin": bin_path,
         }
     return {
         "ok": True,

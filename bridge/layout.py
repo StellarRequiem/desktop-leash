@@ -257,8 +257,11 @@ def screenshot_window(app: str, out_path: Path, *, title_contains: str = "") -> 
     x, y, w, h = int(win["x"]), int(win["y"]), int(win["w"]), int(win["h"])
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    # screencapture -R x,y,w,h
-    cmd = ["screencapture", "-x", "-R", f"{x},{y},{w},{h}", str(out_path)]
+    # screencapture -R x,y,w,h (absolute path — thin PATH under launchd)
+    from screencap_util import screencapture_bin
+
+    bin_path = screencapture_bin()
+    cmd = [bin_path, "-x", "-R", f"{x},{y},{w},{h}", str(out_path)]
     code, _out, err = _run(cmd, timeout=60.0)
     if code != 0 or not out_path.is_file() or out_path.stat().st_size < 32:
         return {
@@ -266,6 +269,7 @@ def screenshot_window(app: str, out_path: Path, *, title_contains: str = "") -> 
             "code": "WINDOW_SHOT_FAIL",
             "detail": (err or f"exit {code}")[:300],
             "window": win,
+            "bin": bin_path,
         }
     return {
         "ok": True,
