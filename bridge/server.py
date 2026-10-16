@@ -22,10 +22,25 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
 RECEIPTS = ROOT / "receipts"
 CAPTURES = ROOT / "captures"
-STATE_PATH = Path(__file__).resolve().parent / ".state.json"
+STATE_PATH = Path('/Users/llm01/Library/Application Support/AssuranceMesh/DesktopProxy-v5/bridge-arm-v7.json')
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("DESKTOP_LEASH_PORT", "8757"))
-ARM_TTL_SEC = int(os.environ.get("DESKTOP_LEASH_ARM_TTL", "0"))
+ARM_TTL_DEFAULT = 900
+ARM_TTL_MAX = 86400
+
+
+def _clamp_arm_ttl(value: Any) -> int:
+    """Arming always expires. 0/negative/garbage -> default; above max -> max."""
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return ARM_TTL_DEFAULT
+    if v <= 0:
+        return ARM_TTL_DEFAULT
+    return min(v, ARM_TTL_MAX)
+
+
+ARM_TTL_SEC = _clamp_arm_ttl(os.environ.get("DESKTOP_LEASH_ARM_TTL", str(ARM_TTL_DEFAULT)))
 # D4 confirm required by default; set DESKTOP_LEASH_REQUIRE_CONFIRM=0 to disable (not recommended)
 REQUIRE_D4_CONFIRM = os.environ.get("DESKTOP_LEASH_REQUIRE_CONFIRM", "1") not in (
     "0",
@@ -112,6 +127,31 @@ APP_DENYLIST = frozenset(
     }
 )
 
+
+# Operator-selected capability mode. A missing/malformed policy stops startup.
+def _operator_proxy_policy():
+    path = ROOT / "profiles" / "cua_allowlist.json"
+    raw = path.read_bytes()
+    value = json.loads(raw)
+    mode = value.get("input_scope", "allowlist")
+    if mode not in ("allowlist", "operator-proxy"):
+        raise RuntimeError("INVALID_INPUT_SCOPE")
+    if mode == "operator-proxy" and value.get("operator_authorization") != "desktop-proxy-20261012":
+        raise RuntimeError("PROXY_AUTHORITY_REQUIRED")
+    return mode, hashlib.sha256(raw).hexdigest()
+
+INPUT_SCOPE, INPUT_POLICY_SHA = _operator_proxy_policy()
+
+def _input_policy_current():
+    try:
+        return _operator_proxy_policy() == (INPUT_SCOPE, INPUT_POLICY_SHA)
+    except Exception:
+        return False
+
+def _app_denied(name):
+    # Denylist always wins, in every input_scope (operator-proxy included).
+    return name in APP_DENYLIST
+
 # Apps we never quit even if allowlisted (safety)
 QUIT_DENY = frozenset({"Finder", "WindowServer", "loginwindow", "Dock", "SystemUIServer"})
 
@@ -176,6 +216,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import observe  # noqa: E402
 import observe_cua  # noqa: E402
 import layout  # noqa: E402
+import proxy_input
 
 
 def _now() -> float:
@@ -233,7 +274,7 @@ def _arm_active() -> bool:
         if not _arm.get("armed"):
             return False
         until = float(_arm.get("until") or 0)
-        if until > 0 and _now() > until:
+        if until <= 0 or _now() > until:
             _arm["armed"] = False
             _arm["until"] = 0.0
             return False
@@ -241,12 +282,11 @@ def _arm_active() -> bool:
 
 
 def _set_arm(armed: bool, ttl: int | None = None) -> dict[str, Any]:
-    if ttl is None:
-        ttl = ARM_TTL_SEC
+    ttl = ARM_TTL_SEC if ttl is None else _clamp_arm_ttl(ttl)
     with _lock:
         if armed:
             token = hashlib.sha256(os.urandom(32)).hexdigest()[:16]
-            until = 0.0 if int(ttl) <= 0 else _now() + int(ttl)
+            until = _now() + ttl
             _arm.update({"armed": True, "until": until, "token": token})
         else:
             _arm.update({"armed": False, "until": 0.0, "token": ""})
@@ -279,10 +319,12 @@ def _load_state() -> None:
         data = json.loads(STATE_PATH.read_text(encoding="utf-8"))
         arm = data.get("arm") or {}
         with _lock:
+            until = float(arm.get("until") or 0)
             _arm.update(
                 {
-                    "armed": bool(arm.get("armed")),
-                    "until": float(arm.get("until") or 0),
+                    # Legacy never-expiring arm (until=0) is not honoured.
+                    "armed": bool(arm.get("armed")) and until > 0,
+                    "until": until,
                     "token": str(arm.get("token") or ""),
                 }
             )
@@ -303,9 +345,9 @@ def _velocity_ok(bucket: str = "input") -> tuple[bool, str]:
 
 
 def _app_allowed(name: str) -> bool:
-    if not name or name in APP_DENYLIST:
+    if not name or _app_denied(name):
         return False
-    return name in APP_ALLOWLIST
+    return INPUT_SCOPE == "operator-proxy" or name in APP_ALLOWLIST
 
 
 def _require_frontmost_allowed() -> dict[str, Any] | None:
@@ -318,7 +360,7 @@ def _require_frontmost_allowed() -> dict[str, Any] | None:
             "hint": "Accessibility required",
         }
     app = (fm.get("data") or {}).get("app") or ""
-    if app in APP_DENYLIST:
+    if _app_denied(app):
         return {
             "ok": False,
             "code": "APP_DENIED",
@@ -378,7 +420,7 @@ def _is_high_blast(action: str, payload: dict[str, Any]) -> tuple[bool, str]:
         return True, f"QUIT application {app!r}"
     if action == "desktop.press":
         key = str(payload.get("key") or "").strip().lower()
-        if key in HIGH_BLAST_KEYS:
+        if key.split("+")[-1] in HIGH_BLAST_KEYS or key in ("cmd+q", "command+q"):
             return True, f"PRESS {key} (may execute focused shell/command)"
     # Optional: type that looks like destructive shell
     if action == "desktop.type":
@@ -412,7 +454,7 @@ def status_payload() -> dict[str, Any]:
         "profile": PROFILE,
         "armed": _arm_active(),
         "arm_until": arm.get("until"),
-        "arm_mode": "toggle" if ARM_TTL_SEC <= 0 else f"timed_{ARM_TTL_SEC}s",
+        "arm_mode": f"timed_{ARM_TTL_SEC}s",
         "require_d4_confirm": REQUIRE_D4_CONFIRM,
         "require_d4_session": REQUIRE_D4_SESSION,
         "d4_session": {
@@ -423,6 +465,9 @@ def status_payload() -> dict[str, Any]:
         "pending_confirms": pending,
         "allowed_actions": sorted(ALLOWED_ACTIONS),
         "action_tiers": dict(ACTION_TIERS),
+        "input_scope": INPUT_SCOPE,
+        "input_policy_current": _input_policy_current(),
+        "input_policy_sha256": INPUT_POLICY_SHA,
         "app_allowlist": sorted(APP_ALLOWLIST),
         "app_denylist": sorted(APP_DENYLIST),
         "velocity": {"max": VEL_MAX, "window_sec": VEL_WINDOW},
@@ -436,6 +481,8 @@ def status_payload() -> dict[str, Any]:
 
 def _execute(action: str, payload: dict[str, Any], job_id: str) -> dict[str, Any]:
     """Run action body after gates passed (and optional confirm)."""
+    if ACTION_TIERS.get(action, 0) >= 2 and not _input_policy_current():
+        return {"ok": False, "code": "INPUT_POLICY_CHANGED"}
     if action == "desktop.apps":
         res = observe.list_apps()
     elif action == "desktop.windows":
@@ -496,7 +543,7 @@ def _execute(action: str, payload: dict[str, Any], job_id: str) -> dict[str, Any
         app = str(payload.get("app") or "").strip()
         if not app:
             res = {"ok": False, "code": "APP_REQUIRED", "detail": "app required for click_window"}
-        elif app in APP_DENYLIST:
+        elif _app_denied(app):
             res = {"ok": False, "code": "APP_DENIED", "detail": f"{app!r} denylisted"}
         elif not _app_allowed(app):
             res = {
@@ -524,7 +571,7 @@ def _execute(action: str, payload: dict[str, Any], job_id: str) -> dict[str, Any
                         res = resolved
                     else:
                         d = resolved["data"]
-                        click = observe.click_xy(int(d["global_x"]), int(d["global_y"]))
+                        click = proxy_input.click_xy(int(d["global_x"]), int(d["global_y"]))
                         if click.get("ok"):
                             click["data"] = {**(click.get("data") or {}), "resolved": d}
                         res = click
@@ -541,7 +588,7 @@ def _execute(action: str, payload: dict[str, Any], job_id: str) -> dict[str, Any
                     res = resolved
                 else:
                     d = resolved["data"]
-                    click = observe.click_xy(int(d["global_x"]), int(d["global_y"]))
+                    click = proxy_input.click_xy(int(d["global_x"]), int(d["global_y"]))
                     if click.get("ok"):
                         click["data"] = {**(click.get("data") or {}), "resolved": d}
                     res = click
@@ -551,7 +598,7 @@ def _execute(action: str, payload: dict[str, Any], job_id: str) -> dict[str, Any
         )
     elif action == "desktop.focus":
         app = str(payload.get("app") or "").strip()
-        if app in APP_DENYLIST:
+        if _app_denied(app):
             res = {"ok": False, "code": "APP_DENIED", "detail": f"{app!r} denylisted"}
         elif not _app_allowed(app):
             res = {
@@ -564,7 +611,7 @@ def _execute(action: str, payload: dict[str, Any], job_id: str) -> dict[str, Any
             res = observe.focus_app(app)
     elif action == "desktop.click":
         gate = _require_frontmost_allowed()
-        res = gate if gate else observe.click_xy(int(payload.get("x") or 0), int(payload.get("y") or 0))
+        res = gate if gate else proxy_input.click_xy(int(payload.get("x") or 0), int(payload.get("y") or 0))
     elif action == "desktop.type":
         gate = _require_frontmost_allowed()
         res = gate if gate else observe.type_text(str(payload.get("text") or ""))
@@ -574,15 +621,15 @@ def _execute(action: str, payload: dict[str, Any], job_id: str) -> dict[str, Any
             res = gate
         else:
             key = str(payload.get("key") or "return")
-            res = observe.press_key(key)
-            if res.get("ok") and key.lower() in HIGH_BLAST_KEYS:
+            res = proxy_input.press_key(key)
+            if res.get("ok") and key.lower().split("+")[-1] in HIGH_BLAST_KEYS:
                 res["warning"] = "Return/Enter may execute focused shell command"
     elif action == "desktop.scroll":
         gate = _require_frontmost_allowed()
-        res = gate if gate else observe.scroll_dy(int(payload.get("dy") or 0))
+        res = gate if gate else proxy_input.scroll_dy(int(payload.get("dy") or 0))
     elif action == "desktop.quit":
         app = str(payload.get("app") or "").strip()
-        if app in APP_DENYLIST or app in QUIT_DENY:
+        if _app_denied(app) or app in QUIT_DENY:
             res = {"ok": False, "code": "APP_DENIED", "detail": f"cannot quit {app!r}"}
         elif not _app_allowed(app):
             res = {
@@ -661,7 +708,9 @@ def run_action(payload: dict[str, Any]) -> dict[str, Any]:
                 "code": "CONFIRM_UNKNOWN",
                 "detail": f"no pending confirm {confirm_id!r} (expired or wrong id)",
             }
-        if pend.get("action") != action:
+        if (pend.get("action") != action or
+                _now() > float(pend.get("expires") or 0) or
+                {k:v for k,v in payload.items() if k not in ("confirm_id","confirmed_id")} != pend.get("payload")):
             return {
                 "ok": False,
                 "code": "CONFIRM_MISMATCH",
@@ -714,7 +763,10 @@ def resolve_confirm(body: dict[str, Any]) -> dict[str, Any]:
     if not _arm_active():
         return {"ok": False, "code": "NOT_ARMED", "detail": "re-arm before confirming"}
 
-    # Execute with confirm_id so run_action path... simpler: call _execute directly
+    if not _d4_session_active():
+        return {"ok": False, "code": "D4_SESSION_CLOSED"}
+
+    # Execute only the stored operator-reviewed action.
     with _lock:
         _pending.pop(cid, None)
     action = pend["action"]
@@ -799,7 +851,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    _load_state()
+    os.umask(0o077)
+    import desktop_gateway
+    desktop_gateway.install(globals(), ROOT / 'profiles' / 'desktop_auth.json', [Path('/Users/llm01/agent-control/FREEZE'),Path('/Users/llm01/mcp-assure/FREEZE'),Path('/Users/llm01/Documents/Codex/2026-09-06/plugin-creator-users-llm01-codex-skills-2/outputs/control-plane-access-20260908/project-state/FREEZE')])
     RECEIPTS.mkdir(parents=True, exist_ok=True)
     CAPTURES.mkdir(parents=True, exist_ok=True)
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
@@ -807,7 +861,7 @@ def main() -> None:
     print(
         f"version={VERSION} d4_confirm={REQUIRE_D4_CONFIRM} "
         f"d4_session_required={REQUIRE_D4_SESSION} "
-        f"arm_mode={'toggle' if ARM_TTL_SEC <= 0 else ARM_TTL_SEC}",
+        f"arm_mode=timed_{ARM_TTL_SEC}s",
         flush=True,
     )
     try:
