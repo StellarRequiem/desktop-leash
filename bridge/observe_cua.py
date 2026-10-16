@@ -18,7 +18,9 @@ def region_screenshot(out_path: Path, x: int, y: int, w: int, h: int) -> dict[st
         return {"ok": False, "code": "BAD_REGION", "detail": f"{w}x{h}"}
     if x < 0 or y < 0:
         return {"ok": False, "code": "BAD_REGION", "detail": "x,y must be >= 0"}
-    cmd = ["screencapture", "-x", "-R", f"{x},{y},{w},{h}", str(out_path)]
+    from screencap_util import screencapture_bin
+
+    cmd = [screencapture_bin(), "-x", "-R", f"{x},{y},{w},{h}", str(out_path)]
     code, _out, err = _run(cmd, timeout=60.0)
     if code != 0 or not out_path.is_file() or out_path.stat().st_size < 32:
         return {
@@ -26,6 +28,7 @@ def region_screenshot(out_path: Path, x: int, y: int, w: int, h: int) -> dict[st
             "code": "REGION_SHOT_FAIL",
             "detail": (err or "").strip() or f"exit {code}",
             "path": str(out_path),
+            "bin": cmd[0],
         }
     return {
         "ok": True,
